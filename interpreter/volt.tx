@@ -1,0 +1,64 @@
+Program:
+    statements*=Statement
+;
+
+Statement:
+    Trace | Loop | Branch
+;
+
+Trace:
+    start=Expression ('===>' pipes+=Pipe)+ ';'
+;
+
+Ground:
+    /_\|_/
+;
+
+CapacitorStore:
+    '||' name=ID
+;
+
+Expression:
+    StringLit | IntLit | BoolLit | SourceRef
+;
+
+Pipe:
+    Ground | CapacitorStore | VoltageSource | PrintNode | MathOp | LogicOp | SourceRef
+;
+
+StringLit: value=STRING;
+IntLit: value=INT 'v';
+BoolLit: value=/(\[\^\]|\[v\])/;
+
+VoltageSource:
+    tag=/\[\+[0-9]+v\-\]|\[\-[0-9]+v\+\]/
+;
+
+SourceRef:
+    name=ID
+;
+
+PrintNode:
+    '(O)'
+;
+
+MathOp:
+    op=/(\(\+\)|\(\-\)|\(\%\))/ val=Expression
+;
+
+LogicOp:
+    op=/(\(\=\)|\(\>\)|\(\<\))/ val=Expression
+;
+
+Loop:
+    '(~)' '[' count=IntLit ']' '{'
+        statements*=Statement
+    '}'
+;
+
+Branch:
+    '_/_[' condition=Expression ']' '{'
+        '[^]:' high_statements*=Statement
+        ('[v]:'  low_statements*=Statement)?
+    '}'
+;
