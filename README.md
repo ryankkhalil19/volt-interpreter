@@ -1,26 +1,30 @@
 # Volt Interpreter
 
-Core execution engine for the Volt programming language.
+Volt is a schematic-inspired language with explicit memory lifecycle control.
+The implementation is in `interpreter/` and is built with TextX.
 
-Volt is a strictly typed, schematic-inspired language where data must flow through explicit traces and physically terminate at Ground (`_|_`). This interpreter implements the Phase 1 execution model using TextX with a strict left-to-right, 1D pipeline.
+## Core Guarantees
 
-## Why this design works
-- Enforces **explicit flow**: all operations occur in `Trace` pipelines.
-- Enforces **hard termination**: every trace must end with `_|_` in grammar.
-- Enforces **memory safety by structure**: open or incomplete traces fail parse-time.
-- Enforces **capacity checks**: voltage overflow on capacitor declarations throws runtime errors.
+- **Explicit allocation/deallocation**: variables are created only via `VoltageSource -> CapacitorStore` and released via `_|_`.
+- **Compile-time leak rejection**: static analysis is path-sensitive and rejects programs where any allocated source can survive termination on any control-flow path.
+- **No GC dependency**: runtime does not rely on garbage collection for language memory lifecycle.
+- **Physically constrained memory**: integer writes are bounded by signed/unsigned bit width (including non-byte-aligned widths like `9v`).
+- **Deterministic cleanup on faults**: runtime always clears remaining allocations on termination, including errors.
 
-## Repository structure
-- `volt.tx` - TextX grammar for Volt syntax and control structures.
-- `interpreter.py` - Semantic execution engine (evaluation + runtime validation).
-- `README.md` - Project documentation, setup, and examples.
+## Repository Layout
+
+- `interpreter/volt.tx` - grammar
+- `interpreter/interpreter.py` - execution engine + static analysis
+- `sample_programs/` - example Volt programs
+- `tests/test_engine.py` - regression/edge-case suite
+- `run_tests.sh` - one-command test runner
 
 ## Requirements
+
 - Python 3.9+
 - `textX`
 
-## Installation
-Create and activate a virtual environment (recommended):
+## Setup
 
 ```bash
 python3 -m venv .venv
@@ -29,40 +33,74 @@ pip install --upgrade pip
 pip install textX
 ```
 
-If you prefer global install:
+## Run a Program
+
+From repo root:
 
 ```bash
-pip3 install textX
+cd interpreter
+python3 interpreter.py ../sample_programs/hello_world.volt
 ```
 
-## Running the interpreter
+## Run All Tests (TA/Demo)
+
 ```bash
-python3 interpreter.py path/to/program.volt
+./run_tests.sh
 ```
 
-## Example Volt program
-Create `example.volt`:
+## Language Snapshot
+
+### Trace Shape
+
+Every statement is a left-to-right trace:
 
 ```volt
-5v ===> ||[10v] capA ===> Add 3v ===> [=][PrintNode] ===> _|_;
-(~)[2v]{
-  1v ===> Add 1v ===> [=][PrintNode] ===> _|_;
-}
+start_expression ===> pipe ===> pipe ===> ... ;
 ```
 
-Run:
+Trace must terminate at:
 
-```bash
-python3 interpreter.py example.volt
+- `|| variable_name` (store/continue using an allocated variable), or
+- `_|_` (ground/deallocate active source)
+
+### Memory Declaration Model
+
+Variable identity lives in `CapacitorStore` only:
+
+```volt
+"admin" ===> [+40v-] ===> || username ;
 ```
 
-## Safety model
-Volt's safety guarantees in this phase come from two layers:
+- `[+Nv-]` = unsigned `N`-bit storage
+- `[-Nv+]` = signed `N`-bit storage
 
-1. **Grammar safety (parse-time):** missing `_|_` makes the source invalid.
-2. **Execution safety (runtime):** uninitialized references and capacitor overloads raise immediate errors.
+### Operations
 
-## Roadmap
-- Add richer node types (I/O, typed arithmetic families).
-- Improve diagnostics with line/column-aware runtime errors.
-- Reintroduce multidirectional schematic semantics on top of validated core pipeline behavior.
+- Print: `(O)`
+- Math: `(+)`, `(-)`, `(%)`
+- Logic: `(=)`, `(>)`, `(<)`
+- Bool literals: `[^]` (high/true), `[v]` (low/false)
+
+### Control Flow
+
+```volt
+(~)[5v] { ... }                 // loop
+_/_[condition] { [^]: ... [v]: ... }   // branch
+```
+
+Branch conditions must evaluate to bool signals (`[^]`/`[v]`).
+
+## Example (Current Syntax)
+
+```volt
+5v ===> [-8v+] ===> || signed_counter ;
+signed_counter ===> (-) 10v ===> || signed_counter ;
+"Signed result (8-bit):" ===> (O) ===> _|_ ;
+signed_counter ===> (O) ===> || signed_counter ;
+signed_counter ===> _|_ ;
+```
+
+## Notes
+
+- This implementation emphasizes strict lifecycle and constrained-memory semantics.
+- See `tests/test_engine.py` for full expected behavior, including failure cases.
